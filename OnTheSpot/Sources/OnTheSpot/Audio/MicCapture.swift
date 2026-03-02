@@ -31,6 +31,8 @@ final class MicCapture: @unchecked Sendable {
         let errorHolder = _error
 
         return AsyncStream { continuation in
+            errorHolder.value = nil
+
             // Set input device before accessing inputNode format
             if let id = deviceID {
                 do {
@@ -65,17 +67,21 @@ final class MicCapture: @unchecked Sendable {
                 return
             }
 
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
-                // Calculate RMS audio level
-                if let channelData = buffer.floatChannelData?[0] {
-                    let frameLength = Int(buffer.frameLength)
-                    var sum: Float = 0
-                    for i in 0..<frameLength {
-                        sum += channelData[i] * channelData[i]
-                    }
-                    let rms = sqrt(sum / Float(max(frameLength, 1)))
-                    level.value = min(rms * 4, 1.0)
-                }
+            guard let tapFormat = AVAudioFormat(
+                standardFormatWithSampleRate: format.sampleRate,
+                channels: format.channelCount
+            ) else {
+                let msg = "Failed to build tap format from input format"
+                print("MicCapture: \(msg)")
+                errorHolder.value = msg
+                continuation.finish()
+                return
+            }
+
+            inputNode.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { buffer, _ in
+                // Track a normalized RMS level regardless of source PCM format.
+                let rms = Self.normalizedRMS(from: buffer)
+                level.value = min(rms * 6, 1.0)
 
                 continuation.yield(buffer)
             }
@@ -102,6 +108,73 @@ final class MicCapture: @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         _audioLevel.value = 0
+    }
+
+    private static func normalizedRMS(from buffer: AVAudioPCMBuffer) -> Float {
+        let frameLength = Int(buffer.frameLength)
+        let channelCount = Int(max(buffer.format.channelCount, 1))
+        guard frameLength > 0 else { return 0 }
+
+        if let channelData = buffer.floatChannelData {
+            return rms(
+                frameLength: frameLength,
+                channelCount: channelCount
+            ) { frame, channel in
+                if buffer.format.isInterleaved {
+                    let stride = channelCount
+                    return channelData[0][(frame * stride) + channel]
+                }
+                return channelData[channel][frame]
+            }
+        }
+
+        if let channelData = buffer.int16ChannelData {
+            let scale: Float = 1 / Float(Int16.max)
+            return rms(
+                frameLength: frameLength,
+                channelCount: channelCount
+            ) { frame, channel in
+                if buffer.format.isInterleaved {
+                    let stride = channelCount
+                    return Float(channelData[0][(frame * stride) + channel]) * scale
+                }
+                return Float(channelData[channel][frame]) * scale
+            }
+        }
+
+        if let channelData = buffer.int32ChannelData {
+            let scale: Float = 1 / Float(Int32.max)
+            return rms(
+                frameLength: frameLength,
+                channelCount: channelCount
+            ) { frame, channel in
+                if buffer.format.isInterleaved {
+                    let stride = channelCount
+                    return Float(channelData[0][(frame * stride) + channel]) * scale
+                }
+                return Float(channelData[channel][frame]) * scale
+            }
+        }
+
+        return 0
+    }
+
+    private static func rms(
+        frameLength: Int,
+        channelCount: Int,
+        sampleAt: (_ frame: Int, _ channel: Int) -> Float
+    ) -> Float {
+        var sum: Float = 0
+
+        for frame in 0..<frameLength {
+            for channel in 0..<channelCount {
+                let s = sampleAt(frame, channel)
+                sum += s * s
+            }
+        }
+
+        let sampleCount = Float(frameLength * channelCount)
+        return sampleCount > 0 ? sqrt(sum / sampleCount) : 0
     }
 
     // MARK: - List available input devices

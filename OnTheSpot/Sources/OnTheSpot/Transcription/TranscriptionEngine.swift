@@ -25,8 +25,11 @@ final class TranscriptionEngine {
 
     func start(locale: Locale, inputDeviceID: AudioDeviceID = 0) async {
         guard !isRunning else { return }
-        isRunning = true
         lastError = nil
+
+        guard await ensureMicrophonePermission() else { return }
+
+        isRunning = true
         assetStatus = "Preparing..."
 
         let micTranscriber = SpeechTranscriber(
@@ -152,6 +155,28 @@ final class TranscriptionEngine {
                     }
                 }
             }
+        }
+    }
+
+    private func ensureMicrophonePermission() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return true
+        case .notDetermined:
+            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            if !granted {
+                lastError = "Microphone access denied. Enable it in System Settings > Privacy & Security > Microphone."
+                assetStatus = "Ready"
+            }
+            return granted
+        case .denied, .restricted:
+            lastError = "Microphone access is disabled. Enable it in System Settings > Privacy & Security > Microphone."
+            assetStatus = "Ready"
+            return false
+        @unknown default:
+            lastError = "Unable to verify microphone permission."
+            assetStatus = "Ready"
+            return false
         }
     }
 
