@@ -26,5 +26,9 @@
     <string>OpenGranola needs screen capture permission to capture system audio from other participants.</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
+    <key>SUFeedURL</key>
+    <string>https://raw.githubusercontent.com/yazinsai/OpenGranola/gh-pages/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>RMSxoyjk8gEBvqmECGMvBLYQ7Kl7ptbacDBWSbsdgeI=</string>
 </dict>
 </plist>

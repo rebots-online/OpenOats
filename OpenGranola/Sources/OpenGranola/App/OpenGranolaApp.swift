@@ -1,10 +1,16 @@
 import SwiftUI
 import AppKit
+import Sparkle
 
 @main
 struct OpenGranolaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var settings = AppSettings()
+    private let updaterController: SPUStandardUpdaterController
+
+    init() {
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -15,8 +21,13 @@ struct OpenGranolaApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 320, height: 560)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterController.updater)
+            }
+        }
         Settings {
-            SettingsView(settings: settings)
+            SettingsView(settings: settings, updater: updaterController.updater)
         }
     }
 }

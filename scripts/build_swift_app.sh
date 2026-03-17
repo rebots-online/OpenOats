@@ -38,6 +38,7 @@ APP_DIR="$ROOT_DIR/dist/$APP_NAME.app"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
+mkdir -p "$APP_DIR/Contents/Frameworks"
 
 # Copy binary
 cp "$BINARY_PATH" "$APP_DIR/Contents/MacOS/OpenGranola"
@@ -50,6 +51,16 @@ ICON_PATH="$SWIFT_DIR/Sources/OpenGranola/Assets/AppIcon.icns"
 if [[ -f "$ICON_PATH" ]]; then
   cp "$ICON_PATH" "$APP_DIR/Contents/Resources/AppIcon.icns"
   echo "App icon copied"
+fi
+
+# Copy Sparkle framework
+SPARKLE_ARTIFACT_DIR="$SWIFT_DIR/.build/artifacts/sparkle"
+SPARKLE_FW=$(find "$SPARKLE_ARTIFACT_DIR" -name "Sparkle.framework" -type d 2>/dev/null | head -1)
+if [[ -n "$SPARKLE_FW" ]]; then
+  cp -R "$SPARKLE_FW" "$APP_DIR/Contents/Frameworks/"
+  echo "Sparkle.framework copied"
+else
+  echo "Warning: Sparkle.framework not found in build artifacts"
 fi
 
 # Add PkgInfo
@@ -70,7 +81,28 @@ if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
   ENTITLEMENTS="$SWIFT_DIR/Sources/OpenGranola/OpenGranola.entitlements"
   echo "Signing with: $CODESIGN_IDENTITY"
 
-  codesign --force --deep --options runtime \
+  # Sign Sparkle XPC services and framework first (inside-out)
+  SPARKLE_FW_BUNDLE="$APP_DIR/Contents/Frameworks/Sparkle.framework"
+  if [[ -d "$SPARKLE_FW_BUNDLE" ]]; then
+    # Sign XPC services
+    for xpc in "$SPARKLE_FW_BUNDLE"/XPCServices/*.xpc; do
+      if [[ -d "$xpc" ]]; then
+        codesign --force --options runtime --sign "$CODESIGN_IDENTITY" --timestamp "$xpc"
+      fi
+    done
+
+    # Sign Autoupdate helper
+    AUTOUPDATE="$SPARKLE_FW_BUNDLE/Versions/B/Autoupdate"
+    if [[ -f "$AUTOUPDATE" ]]; then
+      codesign --force --options runtime --sign "$CODESIGN_IDENTITY" --timestamp "$AUTOUPDATE"
+    fi
+
+    # Sign the framework itself
+    codesign --force --options runtime --sign "$CODESIGN_IDENTITY" --timestamp "$SPARKLE_FW_BUNDLE"
+  fi
+
+  # Sign the main app bundle
+  codesign --force --options runtime \
     --sign "$CODESIGN_IDENTITY" \
     --entitlements "$ENTITLEMENTS" \
     --timestamp \

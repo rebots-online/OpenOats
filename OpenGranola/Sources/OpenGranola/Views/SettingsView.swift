@@ -1,8 +1,10 @@
 import SwiftUI
 import CoreAudio
+import Sparkle
 
 struct SettingsView: View {
     @Bindable var settings: AppSettings
+    var updater: SPUUpdater
     @State private var inputDevices: [(id: AudioDeviceID, name: String)] = []
 
     var body: some View {
@@ -89,6 +91,14 @@ struct SettingsView: View {
                 Text("When enabled, the app is invisible during screen sharing and recording.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Updates") {
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.automaticallyChecksForUpdates = $0 }
+                ))
+                .font(.system(size: 12))
             }
 }
         .formStyle(.grouped)
